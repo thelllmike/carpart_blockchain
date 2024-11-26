@@ -6,8 +6,8 @@ contract ParkingFeeSystem {
         string vehicleNumber;
         string userName;
         address walletAddress;
-        uint256 entryTime;
-        uint256 exitTime;
+        uint256 parkingHours; // New field for parking hours
+        uint256 totalFee;     // New field for total calculated fee
     }
 
     mapping(address => VehicleInfo) public vehicleRecords; // Maps wallet addresses to vehicle info
@@ -16,8 +16,8 @@ contract ParkingFeeSystem {
     uint256 public feeRatePerHour;                        // Fee rate per hour in Wei
 
     event VehicleRegistered(address indexed user, string vehicleNumber);
-    event EntryRecorded(address indexed user, uint256 entryTime);
-    event ExitRecorded(address indexed user, uint256 exitTime, uint256 fee);
+    event ParkingHoursSet(address indexed user, uint256 parkingHours, uint256 fee);
+    event FeePaid(address indexed user, uint256 amount);
     event BalanceDeposited(address indexed user, uint256 amount);
     event BalanceWithdrawn(address indexed user, uint256 amount);
     event OwnerWithdrawn(uint256 amount);
@@ -51,49 +51,45 @@ contract ParkingFeeSystem {
             vehicleNumber: _vehicleNumber,
             userName: _userName,
             walletAddress: msg.sender,
-            entryTime: 0,
-            exitTime: 0
+            parkingHours: 0,
+            totalFee: 0
         });
 
         emit VehicleRegistered(msg.sender, _vehicleNumber);
     }
 
     /**
-     * @notice Record vehicle entry time
+     * @notice Set parking hours for a user and calculate the total fee
+     * @param parkingHours The number of hours the vehicle will be parked
      */
-    function recordEntry() public userExists {
-        VehicleInfo storage vehicle = vehicleRecords[msg.sender];
-        require(vehicle.entryTime == 0, "Vehicle is already parked");
+    function setParkingHours(uint256 parkingHours) public userExists {
+        require(parkingHours > 0, "Parking hours must be greater than zero");
 
-        vehicle.entryTime = block.timestamp;
-        emit EntryRecorded(msg.sender, vehicle.entryTime);
+        VehicleInfo storage vehicle = vehicleRecords[msg.sender];
+        vehicle.parkingHours = parkingHours;
+
+        // Calculate the total fee based on parkingHours and fee rate
+        vehicle.totalFee = parkingHours * feeRatePerHour;
+
+        emit ParkingHoursSet(msg.sender, parkingHours, vehicle.totalFee);
     }
 
     /**
-     * @notice Record vehicle exit time and calculate fees
+     * @notice Pay the parking fee
      */
-    function recordExit() public userExists {
+    function payFee() public userExists {
         VehicleInfo storage vehicle = vehicleRecords[msg.sender];
-        require(vehicle.entryTime > 0, "Vehicle has not entered");
-        require(vehicle.exitTime == 0, "Vehicle has already exited");
+        require(vehicle.totalFee > 0, "No fee to pay");
+        require(balances[msg.sender] >= vehicle.totalFee, "Insufficient balance to pay the fee");
 
-        vehicle.exitTime = block.timestamp;
+        // Deduct the fee from the user's balance
+        balances[msg.sender] -= vehicle.totalFee;
 
-        // Calculate parking duration in hours and fee
-        uint256 parkedDuration = (vehicle.exitTime - vehicle.entryTime) / 3600; // Duration in hours
-        uint256 fee = parkedDuration * feeRatePerHour;
+        // Reset parking hours and fee after payment
+        vehicle.parkingHours = 0;
+        vehicle.totalFee = 0;
 
-        // Ensure the user has enough balance to pay the fee
-        require(balances[msg.sender] >= fee, "Insufficient balance to pay parking fee");
-
-        // Deduct fee from user's balance
-        balances[msg.sender] -= fee;
-
-        // Reset entry and exit times
-        vehicle.entryTime = 0;
-        vehicle.exitTime = 0;
-
-        emit ExitRecorded(msg.sender, block.timestamp, fee);
+        emit FeePaid(msg.sender, vehicle.totalFee);
     }
 
     /**
