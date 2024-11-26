@@ -1,3 +1,4 @@
+# Node.js files
 node_modules
 .env
 coverage
@@ -5,6 +6,36 @@ coverage.json
 typechain
 typechain-types
 
-#Hardhat files
+# Hardhat files
 cache*
 artifacts*
+
+# Python virtual environment
+venv/
+ENV/
+.venv/
+env/
+env.bak/
+venv.bak/
+
+# Python bytecode
+*.py[cod]
+__pycache__/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.out
+*.err
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*~
