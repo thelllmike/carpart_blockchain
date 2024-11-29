@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+mysql-connector-python
+web3==5.27.0
+thirdweb-sdk
+python-dotenv
