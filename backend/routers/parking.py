@@ -18,32 +18,37 @@ async def register_vehicle_endpoint(vehicle_number: str, user_name: str):
         raise HTTPException(status_code=500, detail=f"Failed to register vehicle: {str(e)}")
 
 @router.post("/parking/set-hours/")
-async def set_parking_hours_endpoint(parking_hours: int):
+async def set_parking_hours_endpoint(vehicle_number: str, parking_hours: int):
     """
-    Endpoint to set parking hours on the blockchain.
+    Endpoint to set parking hours for a specific vehicle on the blockchain.
     """
     try:
-        receipt = set_parking_hours(parking_hours)
+        receipt = set_parking_hours(vehicle_number, parking_hours)
         return {
             "status": "success",
             "transactionHash": receipt.transactionHash.hex(),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to set parking hours: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to set parking hours for vehicle {vehicle_number}: {str(e)}")
 
 @router.get("/parking/info/{user_address}")
 async def get_vehicle_info_endpoint(user_address: str):
     """
-    Endpoint to get vehicle information from the blockchain.
+    Endpoint to get all vehicles information for a user from the blockchain.
     """
     try:
-        info = get_vehicle_info(user_address)
-        return {
-            "vehicleNumber": info[0],
-            "userName": info[1],
-            "walletAddress": info[2],
-            "parkingHours": info[3],
-            "totalFee": info[4],
-        }
+        vehicles = get_vehicle_info(user_address)
+        # Format the response to include all registered vehicles
+        formatted_vehicles = [
+            {
+                "vehicleNumber": vehicle[0],
+                "userName": vehicle[1],
+                "walletAddress": vehicle[2],
+                "parkingHours": vehicle[3],
+                "totalFee": vehicle[4],
+            }
+            for vehicle in vehicles
+        ]
+        return {"status": "success", "vehicles": formatted_vehicles}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get vehicle info: {str(e)}")

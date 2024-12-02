@@ -6,29 +6,24 @@ contract ParkingFeeSystem {
         string vehicleNumber;
         string userName;
         address walletAddress;
-        uint256 parkingHours; // New field for parking hours
-        uint256 totalFee;     // New field for total calculated fee
+        uint256 parkingHours; // Parking hours for this vehicle
+        uint256 totalFee;     // Total calculated fee for parking
     }
 
-    mapping(address => VehicleInfo) public vehicleRecords; // Maps wallet addresses to vehicle info
-    mapping(address => uint256) public balances;          // User balances to pay parking fees
-    address public owner;                                 // Contract owner (admin)
-    uint256 public feeRatePerHour;                        // Fee rate per hour in Wei
+    mapping(address => VehicleInfo[]) public userVehicles; // User's multiple vehicles
+    mapping(address => uint256) public balances;           // User balances for parking fees
+    address public owner;                                  // Contract owner (admin)
+    uint256 public feeRatePerHour;                         // Fee rate per hour in Wei
 
     event VehicleRegistered(address indexed user, string vehicleNumber);
-    event ParkingHoursSet(address indexed user, uint256 parkingHours, uint256 fee);
-    event FeePaid(address indexed user, uint256 amount);
+    event ParkingHoursSet(address indexed user, string vehicleNumber, uint256 parkingHours, uint256 fee);
+    event FeePaid(address indexed user, string vehicleNumber, uint256 amount);
     event BalanceDeposited(address indexed user, uint256 amount);
     event BalanceWithdrawn(address indexed user, uint256 amount);
     event OwnerWithdrawn(uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only the owner can perform this action");
-        _;
-    }
-
-    modifier userExists() {
-        require(bytes(vehicleRecords[msg.sender].vehicleNumber).length > 0, "User not registered");
         _;
     }
 
@@ -45,51 +40,83 @@ contract ParkingFeeSystem {
     function registerVehicle(string memory _vehicleNumber, string memory _userName) public {
         require(bytes(_vehicleNumber).length > 0, "Vehicle number cannot be empty");
         require(bytes(_userName).length > 0, "User name cannot be empty");
-        require(bytes(vehicleRecords[msg.sender].vehicleNumber).length == 0, "Vehicle already registered");
 
-        vehicleRecords[msg.sender] = VehicleInfo({
-            vehicleNumber: _vehicleNumber,
-            userName: _userName,
-            walletAddress: msg.sender,
-            parkingHours: 0,
-            totalFee: 0
-        });
+        // Check if the vehicle number is already registered for this user
+        for (uint256 i = 0; i < userVehicles[msg.sender].length; i++) {
+            require(
+                keccak256(bytes(userVehicles[msg.sender][i].vehicleNumber)) != keccak256(bytes(_vehicleNumber)),
+                "Vehicle already registered"
+            );
+        }
+
+        // Add a new vehicle to the user's list
+        userVehicles[msg.sender].push(
+            VehicleInfo({
+                vehicleNumber: _vehicleNumber,
+                userName: _userName,
+                walletAddress: msg.sender,
+                parkingHours: 0,
+                totalFee: 0
+            })
+        );
 
         emit VehicleRegistered(msg.sender, _vehicleNumber);
     }
 
     /**
-     * @notice Set parking hours for a user and calculate the total fee
+     * @notice Set parking hours for a specific vehicle
+     * @param _vehicleNumber The vehicle number
      * @param parkingHours The number of hours the vehicle will be parked
      */
-    function setParkingHours(uint256 parkingHours) public userExists {
+    function setParkingHours(string memory _vehicleNumber, uint256 parkingHours) public {
         require(parkingHours > 0, "Parking hours must be greater than zero");
 
-        VehicleInfo storage vehicle = vehicleRecords[msg.sender];
-        vehicle.parkingHours = parkingHours;
+        // Find the vehicle by its number
+        VehicleInfo[] storage vehicles = userVehicles[msg.sender];
+        bool vehicleFound = false;
 
-        // Calculate the total fee based on parkingHours and fee rate
-        vehicle.totalFee = parkingHours * feeRatePerHour;
+        for (uint256 i = 0; i < vehicles.length; i++) {
+            if (keccak256(bytes(vehicles[i].vehicleNumber)) == keccak256(bytes(_vehicleNumber))) {
+                vehicles[i].parkingHours = parkingHours;
+                vehicles[i].totalFee = parkingHours * feeRatePerHour; // Calculate the total fee
+                vehicleFound = true;
 
-        emit ParkingHoursSet(msg.sender, parkingHours, vehicle.totalFee);
+                emit ParkingHoursSet(msg.sender, _vehicleNumber, parkingHours, vehicles[i].totalFee);
+                break;
+            }
+        }
+
+        require(vehicleFound, "Vehicle not found");
     }
 
     /**
-     * @notice Pay the parking fee
+     * @notice Pay the parking fee for a specific vehicle
+     * @param _vehicleNumber The vehicle number
      */
-    function payFee() public userExists {
-        VehicleInfo storage vehicle = vehicleRecords[msg.sender];
-        require(vehicle.totalFee > 0, "No fee to pay");
-        require(balances[msg.sender] >= vehicle.totalFee, "Insufficient balance to pay the fee");
+    function payFee(string memory _vehicleNumber) public {
+        VehicleInfo[] storage vehicles = userVehicles[msg.sender];
+        bool vehicleFound = false;
 
-        // Deduct the fee from the user's balance
-        balances[msg.sender] -= vehicle.totalFee;
+        for (uint256 i = 0; i < vehicles.length; i++) {
+            if (keccak256(bytes(vehicles[i].vehicleNumber)) == keccak256(bytes(_vehicleNumber))) {
+                require(vehicles[i].totalFee > 0, "No fee to pay");
+                require(balances[msg.sender] >= vehicles[i].totalFee, "Insufficient balance to pay the fee");
 
-        // Reset parking hours and fee after payment
-        vehicle.parkingHours = 0;
-        vehicle.totalFee = 0;
+                // Deduct the fee from the user's balance
+                balances[msg.sender] -= vehicles[i].totalFee;
 
-        emit FeePaid(msg.sender, vehicle.totalFee);
+                // Reset parking hours and fee after payment
+                vehicles[i].parkingHours = 0;
+                vehicles[i].totalFee = 0;
+
+                vehicleFound = true;
+
+                emit FeePaid(msg.sender, _vehicleNumber, vehicles[i].totalFee);
+                break;
+            }
+        }
+
+        require(vehicleFound, "Vehicle not found");
     }
 
     /**
@@ -133,9 +160,10 @@ contract ParkingFeeSystem {
     }
 
     /**
-     * @notice Retrieve user's parking info
+     * @notice Retrieve user's parking info for all vehicles
+     * @param _user The address of the user
      */
-    function getVehicleInfo(address _user) public view returns (VehicleInfo memory) {
-        return vehicleRecords[_user];
+    function getVehicleInfo(address _user) public view returns (VehicleInfo[] memory) {
+        return userVehicles[_user];
     }
 }
